@@ -1,5 +1,6 @@
 argon = {}
 argon.null = {}
+argon.undefined = {}
 argon.indent_objects = true
 
 function argon.isalpha(c)
@@ -168,7 +169,10 @@ function argon.readarray(str)
 			break
 		else
 			value,str = argon.readvalue(str)
-			table.insert(array, value)	
+			
+			if value ~= argon.undefined then
+				table.insert(array, value)
+			end
 			c = argon.getc(str)
 			if c == ',' then
 				c,str = argon.getc(str)
@@ -182,7 +186,7 @@ end
 
 function argon.readvalue(str)
 	str = argon.strip(str)
-	local value = argon.null
+	local value = argon.undefined
 	
 	c = argon.getc(str)
 	if c == '"' then
@@ -220,6 +224,7 @@ function argon.readobject(str)
 		c = argon.getc(str)
 		
 		if c == '}' then
+			c,str = argon.getc(str)
 			return data,str
 		end
 		
