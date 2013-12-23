@@ -24,11 +24,15 @@ function argon.isspace(c)
 end
 
 function argon.error(str)
-	error("argon: " .. str)
+	error(string.format("argon: line %d: ", argon.line) .. str)
 end
 
-function argon.expected(c)
-	argon.error("'" .. c .. "' expected")
+function argon.expected(c, got)
+	if not got then
+		argon.error("'" .. c .. "' expected")
+	else 
+		argon.error(string.format("'%s' expected (got '%s')", c, got))
+	end
 end
 
 function argon.strip(str)
@@ -38,9 +42,23 @@ function argon.strip(str)
 	return str
 end
 
+function argon.token(str)
+	local c = ''
+	c,str = argon.getc(str)
+	while argon.isspace(c) do
+		c, str = argon.getc(str)
+	end
+	return c, str
+end
+
 function argon.getc(str)
+	if str == '' or not str then argon.error("getc on an empty string") end
 	local c = string.sub(str, 1, 1)
 	local tail = string.sub(str, 2)
+	
+	if c == '\n' then
+		argon.line = argon.line + 1
+	end
 	if c == '' then
 		argon.error("unexpected eof.")
 	end
@@ -49,8 +67,8 @@ end
 
 function argon.readkey(str)
 	local key = ''
-	str = argon.strip(str)
-	local c = argon.getc(str)
+	local c = ''
+	c,str = argon.token(str)
 	if c == '"' then
 		key,str = argon.readstring(str)
 	else
@@ -58,6 +76,7 @@ function argon.readkey(str)
 			argon.error("key expected.")
 		end
 		
+		key = c
 		while true do
 			c = argon.getc(str)
 			if argon.isalnum(c) or c == '_' then
@@ -69,15 +88,16 @@ function argon.readkey(str)
 		end
 	end	
 	
-	str = argon.strip(str)
-	if argon.getc(str) ~= ':' then
-		argon.expected(':')	
+	local t = argon.token(str)
+	if t ~= ':' then
+		argon.expected(':', t)
 	end
 	return key,str	
 end
 
 function argon.readstring(str)
-	c,str = argon.getc(str)
+	c,str = argon.token(str)
+	if c ~= '"' then argon.expected('"', c) end
 	local value = ''
 	local done = false
 	while not done do
@@ -109,18 +129,20 @@ end
 function argon.readnumber(str)
 	local value = ''
 	local dot = true
+	
 	while true do
-		local c = argon.getc(str)		
+		local c= ''
+		c = argon.token(str)
+		
 		if argon.isnumeric(c) then
+			c,str = argon.token(str)
 			value = value .. c
-			c,str = argon.getc(str)
 		elseif c == '.' then
 			value = value .. c
 			dot = true
-			c,str = argon.getc(str)
 		else
 			local n = tonumber(value)
-			if n == nil then argon.error("number expected.") end
+			if n == nil then argon.error(string.format("number expected (got '%s')", value)) end
 			return n,str
 		end
 	end
@@ -130,10 +152,10 @@ function argon.readsymbol(str)
 	local value = ''
 	
 	while true do
-		local c = argon.getc(str)
+		local c = argon.token(str)
 		if argon.isalpha(c) then		
+			c,str = argon.token(str)
 			value = value .. c
-			c,str = argon.getc(str)
 		elseif c == ',' or c == '}' then
 			break			
 		else
@@ -185,10 +207,9 @@ function argon.readarray(str)
 end
 
 function argon.readvalue(str)
-	str = argon.strip(str)
 	local value = argon.undefined
 	
-	c = argon.getc(str)
+	c = argon.token(str)
 	if c == '"' then
 		value,str = argon.readstring(str)
 	elseif argon.isnumeric(c) then
@@ -208,10 +229,8 @@ end
 function argon.readobject(str)
 	local data = {}
 	
-	local c = ''
-	str = argon.strip(str)
-	
-	c,str = argon.getc(str)
+	local c = ''	
+	c,str = argon.token(str)
 	
 	if c ~= '{' then
 		argon.expected('{')
@@ -220,32 +239,29 @@ function argon.readobject(str)
 	while true do
 		local key = ''
 		local value = argon.null
-		str = argon.strip(str)
-		c = argon.getc(str)
+		c = argon.token(str)
+		assert(str ~= nil)
 		
 		if c == '}' then
-			c,str = argon.getc(str)
+			local c,str = argon.getc(str)
 			return data,str
 		end
 		
 		key,str = argon.readkey(str)
-		str = argon.strip(str)
-		c,str = argon.getc(str)
+		c,str = argon.token(str)
 		
 		if c ~= ':' then argon.expected(':') end
-		str = argon.strip(str)
 		value,str = argon.readvalue(str)
 		
 		data[key] = value
 		
-		str = argon.strip(str)
-		c = argon.getc(str)
+		c = argon.token(str)
 		
 		if c == ',' then
 			c,str = argon.getc(str)
 			str = argon.strip(str)
 		elseif c ~= '}' then
-			argon.error("',' or '}' expected.")
+			argon.error(string.format("',' or '}' expected (got '%s').", c))
 		end
 	end
 	
@@ -253,6 +269,8 @@ function argon.readobject(str)
 end
 
 function argon.load(str)
+	argon.line = 1
+	
 	local data, str = argon.readobject(str)
 	return data
 end
